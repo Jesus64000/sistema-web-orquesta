@@ -10,6 +10,8 @@ const db = require('./config/db'); // Importa la conexión a la base de datos
 // Importa los modelos de programas y alumnos
 const programaModel = require('./models/programaModel'); // <-- Importa el modelo de programas
 const alumnoModel = require('./models/alumnoModel'); // <-- Importa el modelo de alumnos
+const instrumentoModel = require('./models/instrumentoModel'); // <-- Importa el modelo de instrumentos
+const asignacionInstrumentoModel = require('./models/asignacionInstrumentoModel'); // <-- Asignar Instrumentos
 
 const app = express();
 const port = 3000;
@@ -220,6 +222,216 @@ app.delete('/api/alumnos/:id', (req, res) => {
   });
 });
 
+
+// --- ¡Rutas para la Gestión de Instrumentos!
+
+// GET /api/instrumentos - Obtener todos los instrumentos
+app.get('/api/instrumentos', (req, res) => {
+  instrumentoModel.getAll((err, instrumentos) => {
+    if (err) {
+      console.error('Error al obtener instrumentos:', err);
+      res.status(500).json({ error: 'Error interno del servidor al obtener instrumentos.' });
+      return;
+    }
+    res.json(instrumentos);
+  });
+});
+
+// GET /api/instrumentos/:id - Obtener un instrumento por ID
+app.get('/api/instrumentos/:id', (req, res) => {
+  const { id } = req.params;
+  instrumentoModel.getById(id, (err, instrumento) => {
+    if (err) {
+      console.error('Error al obtener instrumento por ID:', err);
+      res.status(500).json({ error: 'Error interno del servidor al obtener el instrumento.' });
+      return;
+    }
+    if (!instrumento) {
+      res.status(404).json({ message: 'Instrumento no encontrado.' });
+      return;
+    }
+    res.json(instrumento);
+  });
+});
+
+// POST /api/instrumentos - Crear un nuevo instrumento
+app.post('/api/instrumentos', (req, res) => {
+  const { nombre, categoria, numero_serie, estado, fecha_adquisicion, foto_url, ubicacion } = req.body;
+  if (!nombre || !categoria || !numero_serie) { // Campos mínimos requeridos
+    return res.status(400).json({ error: 'Nombre, categoría y número de serie del instrumento son requeridos.' });
+  }
+
+  instrumentoModel.create(nombre, categoria, numero_serie, estado, fecha_adquisicion, foto_url, ubicacion, (err, result) => {
+    if (err) {
+      console.error('Error al crear instrumento:', err);
+      // Puedes añadir más manejo de errores específicos, ej. si numero_serie es duplicado
+      res.status(500).json({ error: 'Error interno del servidor al crear el instrumento.' });
+      return;
+    }
+    res.status(201).json({ message: 'Instrumento creado con éxito', id: result.insertId });
+  });
+});
+
+// PUT /api/instrumentos/:id - Actualizar un instrumento
+app.put('/api/instrumentos/:id', (req, res) => {
+  const { id } = req.params;
+  const { nombre, categoria, numero_serie, estado, fecha_adquisicion, foto_url, ubicacion } = req.body;
+  if (!nombre || !categoria || !numero_serie) {
+    return res.status(400).json({ error: 'Nombre, categoría y número de serie son requeridos para la actualización.' });
+  }
+
+  instrumentoModel.update(id, nombre, categoria, numero_serie, estado, fecha_adquisicion, foto_url, ubicacion, (err, result) => {
+    if (err) {
+      console.error('Error al actualizar instrumento:', err);
+      res.status(500).json({ error: 'Error interno del servidor al actualizar el instrumento.' });
+      return;
+    }
+    if (result.affectedRows === 0) {
+      res.status(404).json({ message: 'Instrumento no encontrado para actualizar.' });
+      return;
+    }
+    res.json({ message: 'Instrumento actualizado con éxito.' });
+  });
+});
+
+// DELETE /api/instrumentos/:id - Eliminar un instrumento
+app.delete('/api/instrumentos/:id', (req, res) => {
+  const { id } = req.params;
+  instrumentoModel.delete(id, (err, result) => {
+    if (err) {
+      console.error('Error al eliminar instrumento:', err);
+      res.status(500).json({ error: 'Error interno del servidor al eliminar el instrumento.' });
+      return;
+    }
+    if (result.affectedRows === 0) {
+      res.status(404).json({ message: 'Instrumento no encontrado para eliminar.' });
+      return;
+    }
+    res.json({ message: 'Instrumento eliminado con éxito.' });
+  });
+});
+
+
+// --- Rutas para la Gestión de Asignaciones de Instrumentos
+
+
+// GET /api/asignaciones - Obtener todas las asignaciones
+app.get('/api/asignaciones', (req, res) => {
+  asignacionInstrumentoModel.getAll((err, asignaciones) => {
+    if (err) {
+      console.error('Error al obtener asignaciones:', err);
+      res.status(500).json({ error: 'Error interno del servidor al obtener asignaciones.' });
+      return;
+    }
+    res.json(asignaciones);
+  });
+});
+
+// GET /api/asignaciones/:id - Obtener una asignación por ID
+app.get('/api/asignaciones/:id', (req, res) => {
+  const { id } = req.params;
+  asignacionInstrumentoModel.getById(id, (err, asignacion) => {
+    if (err) {
+      console.error('Error al obtener asignación por ID:', err);
+      res.status(500).json({ error: 'Error interno del servidor al obtener la asignación.' });
+      return;
+    }
+    if (!asignacion) {
+      res.status(404).json({ message: 'Asignación no encontrada.' });
+      return;
+    }
+    res.json(asignacion);
+  });
+});
+
+// POST /api/asignaciones - Crear una nueva asignación
+app.post('/api/asignaciones', (req, res) => {
+  const { id_instrumento, id_alumno, fecha_asignacion, fecha_devolucion } = req.body;
+  if (!id_instrumento || !id_alumno || !fecha_asignacion) {
+    return res.status(400).json({ error: 'ID de instrumento, ID de alumno y fecha de asignación son requeridos.' });
+  }
+
+  asignacionInstrumentoModel.create(id_instrumento, id_alumno, fecha_asignacion, fecha_devolucion, (err, result) => {
+    if (err) {
+      console.error('Error al crear asignación:', err);
+      // Envía un error 400 si el instrumento no está disponible
+      if (err.message === 'El instrumento no está disponible para asignación.') {
+        return res.status(400).json({ error: err.message });
+      }
+      res.status(500).json({ error: 'Error interno del servidor al crear la asignación.' });
+      return;
+    }
+    res.status(201).json({ message: 'Asignación creada con éxito', id: result.insertId });
+  });
+});
+
+// PUT /api/asignaciones/:id - Actualizar una asignación
+app.put('/api/asignaciones/:id', (req, res) => {
+  const { id } = req.params;
+  const { id_instrumento, id_alumno, fecha_asignacion, fecha_devolucion } = req.body;
+  if (!id_instrumento || !id_alumno || !fecha_asignacion) {
+    return res.status(400).json({ error: 'ID de instrumento, ID de alumno y fecha de asignación son requeridos para la actualización.' });
+  }
+
+  asignacionInstrumentoModel.update(id, id_instrumento, id_alumno, fecha_asignacion, fecha_devolucion, (err, result) => {
+    if (err) {
+      console.error('Error al actualizar asignación:', err);
+      res.status(500).json({ error: 'Error interno del servidor al actualizar la asignación.' });
+      return;
+    }
+    if (result.affectedRows === 0) {
+      res.status(404).json({ message: 'Asignación no encontrada para actualizar.' });
+      return;
+    }
+    res.json({ message: 'Asignación actualizada con éxito.' });
+  });
+});
+
+// POST /api/asignaciones/:id/devolver - Marcar una asignación como devuelta
+app.post('/api/asignaciones/:id/devolver', (req, res) => {
+  const { id } = req.params;
+  const { fecha_devolucion } = req.body; // Se puede enviar o usar la fecha actual del servidor
+
+  if (!fecha_devolucion) { // Si no se envía una fecha, usa la actual
+    // Formato 'YYYY-MM-DD'
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    req.body.fecha_devolucion = `${year}-${month}-${day}`;
+  }
+
+  asignacionInstrumentoModel.returnInstrument(id, req.body.fecha_devolucion, (err, result) => {
+    if (err) {
+      console.error('Error al devolver instrumento:', err);
+      res.status(500).json({ error: 'Error interno del servidor al devolver el instrumento.' });
+      return;
+    }
+    if (result.affectedRows === 0) {
+      res.status(404).json({ message: 'Asignación no encontrada para devolver.' });
+      return;
+    }
+    res.json({ message: 'Instrumento devuelto con éxito y estado actualizado.' });
+  });
+});
+
+
+// DELETE /api/asignaciones/:id - Eliminar una asignación (con lógica para actualizar estado del instrumento)
+app.delete('/api/asignaciones/:id', (req, res) => {
+  const { id } = req.params;
+  asignacionInstrumentoModel.delete(id, (err, result) => {
+    if (err) {
+      console.error('Error al eliminar asignación:', err);
+      res.status(500).json({ error: 'Error interno del servidor al eliminar la asignación.' });
+      return;
+    }
+    if (result.affectedRows === 0) {
+      res.status(404).json({ message: 'Asignación no encontrada para eliminar.' });
+      return;
+    }
+    res.json({ message: 'Asignación eliminada con éxito y estado del instrumento revisado.' });
+  });
+});
 
 
 
