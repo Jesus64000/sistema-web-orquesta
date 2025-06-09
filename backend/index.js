@@ -4,6 +4,8 @@
 require('dotenv').config();
 
 const express = require('express');
+const cors = require('cors'); // <--- ¡ASEGÚRATE DE QUE ESTA LÍNEA ESTÉ AQUÍ!
+const jwt = require('jsonwebtoken');
 
 const db = require('./config/db'); // Importa la conexión a la base de datos
 
@@ -12,13 +14,22 @@ const programaModel = require('./models/programaModel'); // <-- Importa el model
 const alumnoModel = require('./models/alumnoModel'); // <-- Importa el modelo de alumnos
 const instrumentoModel = require('./models/instrumentoModel'); // <-- Importa el modelo de instrumentos
 const asignacionInstrumentoModel = require('./models/asignacionInstrumentoModel'); // <-- Asignar Instrumentos
+const movimientoInventarioModel = require('./models/movimientoInventarioModel'); // <-- Registrar movimientos de los instrumentos
+const userModel = require('./models/userModel'); // <-- Importa el modelo de usuarios
 
 const app = express();
 const port = 3000;
 
 // --- Middleware para parsear JSON ---
+app.use(cors());
 app.use(express.json()); 
 
+// Clave secreta para JWT (asegúrate de que esté en tu .env)
+const jwtSecret = process.env.JWT_SECRET;
+if (!jwtSecret) {
+  console.error('Error: JWT_SECRET no está definida en el archivo .env');
+  process.exit(1);
+}
 
 // --- Rutas de la API (Existentes) ---
 
@@ -39,6 +50,60 @@ app.get('/test-db', (req, res) => {
   });
 });
 
+
+// --- Rutas de Autenticación ---
+
+// Ruta para el registro de usuarios
+app.post('/api/auth/register', (req, res) => {
+  const { nombre, email, password, rol } = req.body; // Cambiado: nombre, email, rol
+
+  if (!nombre || !email || !password) { // Cambiado: nombre, email
+    return res.status(400).json({ message: 'Nombre, email y contraseña son requeridos.' });
+  }
+
+  // Validar el rol para que coincida con tu ENUM
+  const allowedRoles = ['Admin', 'Consultor']; // <-- ¡Importante! Usa tus roles exactos
+  const userRole = rol && allowedRoles.includes(rol) ? rol : 'Consultor'; // Por defecto 'Consultor'
+
+  userModel.register(nombre, email, password, userRole, (err, result) => { // Cambiado: nombre, email, rol
+    if (err) {
+      if (err.message === 'El email ya está registrado.') { // Cambiado: mensaje de error
+        return res.status(409).json({ message: err.message });
+      }
+      console.error('Error al registrar usuario:', err);
+      return res.status(500).json({ message: 'Error interno del servidor al registrar el usuario.' });
+    }
+    res.status(201).json({ message: 'Usuario registrado con éxito', userId: result.insertId });
+  });
+});
+
+// Ruta para el inicio de sesión de usuarios
+app.post('/api/auth/login', (req, res) => {
+  const { email, password } = req.body; // Cambiado: email para login
+
+  if (!email || !password) { // Cambiado: email
+    return res.status(400).json({ message: 'Email y contraseña son requeridos.' });
+  }
+
+  userModel.login(email, password, (err, user) => { // Cambiado: email
+    if (err) {
+      console.error('Error al intentar login:', err);
+      return res.status(500).json({ message: 'Error interno del servidor al intentar iniciar sesión.' });
+    }
+    if (!user) {
+      return res.status(401).json({ message: 'Credenciales inválidas.' });
+    }
+
+    // Si las credenciales son correctas, generar un JWT
+    const token = jwt.sign(
+      { id_usuario: user.id_usuario, nombre: user.nombre, email: user.email, rol: user.rol }, // Cambiado: nombre, email, rol en el token
+      jwtSecret,
+      { expiresIn: '1h' }
+    );
+
+    res.json({ message: 'Inicio de sesión exitoso', token: token, user: { id_usuario: user.id_usuario, nombre: user.nombre, email: user.email, rol: user.rol } }); // Cambiado: nombre, email, rol en la respuesta
+  });
+});
 
 
 // --- Rutas para la Gestión de Programas! ---
@@ -430,6 +495,94 @@ app.delete('/api/asignaciones/:id', (req, res) => {
       return;
     }
     res.json({ message: 'Asignación eliminada con éxito y estado del instrumento revisado.' });
+  });
+});
+
+
+// --- ¡Rutas para la Gestión de Movimientos de Inventario! ---
+
+// GET /api/movimientos - Obtener todos los movimientos
+app.get('/api/movimientos', (req, res) => {
+  movimientoInventarioModel.getAll((err, movimientos) => {
+    if (err) {
+      console.error('Error al obtener movimientos:', err);
+      res.status(500).json({ error: 'Error interno del servidor al obtener movimientos.' });
+      return;
+    }
+    res.json(movimientos);
+  });
+});
+
+// GET /api/movimientos/:id - Obtener un movimiento por ID
+app.get('/api/movimientos/:id', (req, res) => {
+  const { id } = req.params;
+  movimientoInventarioModel.getById(id, (err, movimiento) => {
+    if (err) {
+      console.error('Error al obtener movimiento por ID:', err);
+      res.status(500).json({ error: 'Error interno del servidor al obtener el movimiento.' });
+      return;
+    }
+    if (!movimiento) {
+      res.status(404).json({ message: 'Movimiento no encontrado.' });
+      return;
+    }
+    res.json(movimiento);
+  });
+});
+
+// POST /api/movimientos - Crear un nuevo movimiento
+app.post('/api/movimientos', (req, res) => {
+  const { id_instrumento, tipo_movimiento, fecha_movimiento, descripcion, responsable } = req.body;
+  if (!id_instrumento || !tipo_movimiento || !fecha_movimiento || !responsable) {
+    return res.status(400).json({ error: 'ID de instrumento, tipo de movimiento, fecha y responsable son requeridos.' });
+  }
+
+  movimientoInventarioModel.create(id_instrumento, tipo_movimiento, fecha_movimiento, descripcion, responsable, (err, result) => {
+    if (err) {
+      console.error('Error al crear movimiento:', err);
+      res.status(500).json({ error: 'Error interno del servidor al crear el movimiento.' });
+      return;
+    }
+    res.status(201).json({ message: 'Movimiento creado con éxito', id: result.insertId });
+  });
+});
+
+// PUT /api/movimientos/:id - Actualizar un movimiento
+app.put('/api/movimientos/:id', (req, res) => {
+  const { id } = req.params;
+  const { id_instrumento, tipo_movimiento, fecha_movimiento, descripcion, responsable } = req.body;
+  if (!id_instrumento || !tipo_movimiento || !fecha_movimiento || !responsable) {
+    return res.status(400).json({ error: 'ID de instrumento, tipo de movimiento, fecha y responsable son requeridos para la actualización.' });
+  }
+
+  movimientoInventarioModel.update(id, id_instrumento, tipo_movimiento, fecha_movimiento, descripcion, responsable, (err, result) => {
+    if (err) {
+      console.error('Error al actualizar movimiento:', err);
+      res.status(500).json({ error: 'Error interno del servidor al actualizar el movimiento.' });
+      return;
+    }
+    if (result.affectedRows === 0) {
+      res.status(404).json({ message: 'Movimiento no encontrado para actualizar.' });
+      return;
+    }
+    res.json({ message: 'Movimiento actualizado con éxito.' });
+  });
+});
+
+// DELETE /api/movimientos/:id - Eliminar un movimiento
+app.delete('/api/movimientos/:id', (req, res) => {
+  const { id } = req.params;
+  movimientoInventarioModel.delete(id, (err, result) => {
+    if (err) {
+      console.error('Error al eliminar movimiento:', err);
+      res.status(500).json({ error: 'Error interno del servidor al eliminar el movimiento.' });
+      return;
+    }
+    if (result.affectedRows === 0) {
+      res.status(404).json({ message: 'Movimiento no encontrado para eliminar.' });
+      return;
+    }
+    res.json({ message: 'Movimiento eliminado con éxito.' });
   });
 });
 
