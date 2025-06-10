@@ -12,9 +12,9 @@ const userModel = {
       }
 
       const query = `
-        INSERT INTO Usuario (nombre, email, password_hash, rol) // Cambiado: nombre, email, rol
+        INSERT INTO Usuario (nombre, email, password_hash, rol)
         VALUES (?, ?, ?, ?)
-      `;
+        `;
       db.query(query, [nombre, email, hash, rol], (err, result) => { // Cambiado: nombre, email, rol
         if (err && err.code === 'ER_DUP_ENTRY') {
           // Error específico para email duplicado
@@ -28,9 +28,9 @@ const userModel = {
   // Función para autenticar un usuario
   login: (email, password, callback) => { // Cambiado: email para login
     const query = `
-      SELECT id_usuario, nombre, email, password_hash, rol // Cambiado: nombre, email, rol
+      SELECT id_usuario, nombre, email, password_hash, rol
       FROM Usuario
-      WHERE email = ? // Cambiado: buscar por email
+      WHERE email = ?
     `;
     db.query(query, [email], (err, results) => { // Cambiado: usar email
       if (err) return callback(err);
