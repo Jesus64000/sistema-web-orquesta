@@ -1,0 +1,24 @@
+# Archivos de entorno y configuraciones sensibles
+.env
+backend/.env
+frontend/.env
+
+# Dependencias de Node
+node_modules/
+backend/node_modules/
+frontend/node_modules/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build artifacts
+dist/
+build/
+.vite/
+
+# Varios
+.DS_Store
+.vscode/
